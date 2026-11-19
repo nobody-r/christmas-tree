@@ -3,7 +3,7 @@ import Webcam from 'react-webcam';
 import { Gesture, HandData } from '../types';
 import { Camera, ChevronUp, ChevronDown, Activity } from 'lucide-react';
 
-// We need to declare global types for the CDN loaded scripts
+// We need to declare global types for the locally loaded scripts
 declare global {
   interface Window {
     Hands: any;
@@ -16,45 +16,68 @@ interface Props {
   showCamera: boolean;
 }
 
+const MEDIAPIPE_SCRIPTS = [
+  '/mediapipe/camera_utils/camera_utils.js',
+  '/mediapipe/control_utils/control_utils.js',
+  '/mediapipe/drawing_utils/drawing_utils.js',
+  '/mediapipe/hands/hands.js',
+];
+
+const loadScript = (src: string): Promise<void> => {
+  return new Promise((resolve, reject) => {
+    if (document.querySelector(`script[src="${src}"]`)) {
+      resolve();
+      return;
+    }
+    const script = document.createElement('script');
+    script.src = src;
+    script.async = true;
+    script.onload = () => resolve();
+    script.onerror = () => reject(new Error(`Failed to load ${src}`));
+    document.body.appendChild(script);
+  });
+};
+
 const HandController: React.FC<Props> = ({ onHandUpdate, showCamera }) => {
   const webcamRef = useRef<Webcam>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const [cameraError, setCameraError] = useState(false);
+  const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading');
   const [isExpanded, setIsExpanded] = useState(false);
-  
+
   // Use a ref for hysteresis state to persist across animation frames without re-triggering effects
   const isPinchingRef = useRef(false);
 
   useEffect(() => {
     let camera: any = null;
     let hands: any = null;
+    let cancelled = false;
 
     const onResults = (results: any) => {
       // Draw landmarks on canvas for visual feedback
       if (canvasRef.current && webcamRef.current && webcamRef.current.video) {
         const videoWidth = webcamRef.current.video.videoWidth;
         const videoHeight = webcamRef.current.video.videoHeight;
-        
+
         canvasRef.current.width = videoWidth;
         canvasRef.current.height = videoHeight;
-        
+
         const canvasCtx = canvasRef.current.getContext('2d');
         if (canvasCtx) {
           canvasCtx.save();
           canvasCtx.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height);
-          
+
           if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
             const landmarks = results.multiHandLandmarks[0];
-            
+
             // Draw connectors and landmarks
             const drawingUtils = (window as any); // Access drawing utils from global scope if available
-            if(drawingUtils.drawConnectors && drawingUtils.drawLandmarks) {
+            if (drawingUtils.drawConnectors && drawingUtils.drawLandmarks) {
                drawingUtils.drawConnectors(canvasCtx, landmarks, (window as any).HAND_CONNECTIONS, {color: '#00FF00', lineWidth: 2});
                drawingUtils.drawLandmarks(canvasCtx, landmarks, {color: '#FF0000', lineWidth: 1});
             }
 
             // --- GESTURE LOGIC START ---
-            
+
             // 0: Wrist
             // 4: Thumb Tip, 8: Index Tip
             const wrist = landmarks[0];
@@ -62,7 +85,7 @@ const HandController: React.FC<Props> = ({ onHandUpdate, showCamera }) => {
             const indexTip = landmarks[8];
 
             // 1. CALCULATE METRICS
-            
+
             // Average distance from wrist to all 5 fingertips (for Open/Fist detection)
             const tips = [4, 8, 12, 16, 20];
             let totalTipDist = 0;
@@ -76,7 +99,7 @@ const HandController: React.FC<Props> = ({ onHandUpdate, showCamera }) => {
             const pinchDist = Math.hypot(thumbTip.x - indexTip.x, thumbTip.y - indexTip.y);
 
             // 2. UPDATE STATE WITH HYSTERESIS
-            
+
             // PINCH STATE
             let isPinching = isPinchingRef.current;
             if (isPinching) {
@@ -131,19 +154,48 @@ const HandController: React.FC<Props> = ({ onHandUpdate, showCamera }) => {
       }
     };
 
+    const startCamera = (retries = 10): Promise<void> => {
+      return new Promise((resolve, reject) => {
+        const attempt = (n: number) => {
+          if (cancelled) return;
+          if (webcamRef.current && webcamRef.current.video && webcamRef.current.video.readyState >= 2) {
+            camera = new (window as any).Camera(webcamRef.current.video, {
+              onFrame: async () => {
+                if (webcamRef.current && webcamRef.current.video && hands) {
+                  try {
+                    await hands.send({ image: webcamRef.current.video });
+                  } catch (e) {
+                    // ignore transient send errors
+                  }
+                }
+              },
+              width: 320,
+              height: 240
+            });
+            camera.start();
+            if (!cancelled) setStatus('ready');
+            resolve();
+          } else if (n > 0) {
+            setTimeout(() => attempt(n - 1), 500);
+          } else {
+            reject(new Error('Camera video not ready'));
+          }
+        };
+        attempt(retries);
+      });
+    };
+
     const loadMediaPipe = async () => {
       try {
-        if(!(window as any).Hands) {
-            console.warn("MediaPipe Hands script not loaded yet.");
-            return;
+        // Load all MediaPipe scripts locally (bundled into public/mediapipe)
+        await Promise.all(MEDIAPIPE_SCRIPTS.map(loadScript));
+        if (cancelled) return;
+
+        if (!(window as any).Hands || !(window as any).Camera) {
+          throw new Error('MediaPipe globals missing');
         }
 
-        // Updated to a newer, stable version to prevent CDN 404 errors for assets
-        const handsVersion = '0.4.1675469240';
-        
-        hands = new (window as any).Hands({locateFile: (file: string) => {
-          return `https://cdn.jsdelivr.net/npm/@mediapipe/hands@${handsVersion}/${file}`;
-        }});
+        hands = new (window as any).Hands({ locateFile: (file: string) => '/mediapipe/hands/' + file });
 
         hands.setOptions({
           maxNumHands: 1,
@@ -154,51 +206,40 @@ const HandController: React.FC<Props> = ({ onHandUpdate, showCamera }) => {
 
         hands.onResults(onResults);
 
-        if (webcamRef.current && webcamRef.current.video) {
-          camera = new (window as any).Camera(webcamRef.current.video, {
-            onFrame: async () => {
-              if (webcamRef.current && webcamRef.current.video) {
-                try {
-                    await hands.send({image: webcamRef.current.video});
-                } catch(e) {
-                    console.error("Error sending frame to MediaPipe", e);
-                }
-              }
-            },
-            width: 320,
-            height: 240
-          });
-          camera.start();
-        }
+        await startCamera();
       } catch (err) {
-        console.error("Failed to initialize MediaPipe", err);
-        setCameraError(true);
+        if (!cancelled) {
+          console.error('Failed to initialize MediaPipe', err);
+          setStatus('error');
+        }
       }
     };
 
-    // Small delay to ensure scripts are parsed
-    const timer = setTimeout(loadMediaPipe, 1500);
+    loadMediaPipe();
 
     return () => {
-        clearTimeout(timer);
-        if (camera) camera.stop();
-        if (hands) hands.close();
+      cancelled = true;
+      if (camera) camera.stop();
+      if (hands) hands.close();
     };
-  }, [onHandUpdate]);
+  }, [onHandUpdate, showCamera]);
 
   if (!showCamera) return null;
 
+  const cameraError = status !== 'ready';
+
   return (
     <div className="fixed bottom-4 right-4 z-50 flex flex-col items-end gap-2">
-       
+
         {/* Collapsible Video Container */}
         <div className={`
-            relative overflow-hidden bg-black/90 border border-cyan-500/30 rounded-lg transition-all duration-300 origin-bottom-right shadow-[0_0_20px_rgba(0,243,255,0.1)]
+            relative overflow-hidden bg-black/90 border border-amber-400/40 rounded-lg transition-all duration-300 origin-bottom-right shadow-[0_0_20px_rgba(255,200,80,0.15)]
             ${isExpanded ? 'w-48 h-36 opacity-100 mb-0' : 'w-0 h-0 opacity-0 mb-0 pointer-events-none'}
         `}>
             {cameraError ? (
-                 <div className="flex items-center justify-center w-full h-full text-xs text-red-400 font-mono">
-                    SIGNAL LOST
+                 <div className="flex flex-col items-center justify-center w-full h-full text-xs text-amber-300/90 font-mono gap-1">
+                    <span>摄像头不可用</span>
+                    <span className="text-[9px] text-amber-400/50 tracking-widest">{status === 'loading' ? 'LOADING' : 'SIGNAL LOST'}</span>
                 </div>
             ) : (
                 <>
@@ -214,27 +255,27 @@ const HandController: React.FC<Props> = ({ onHandUpdate, showCamera }) => {
                         ref={canvasRef}
                         className="absolute top-0 left-0 w-full h-full object-cover"
                     />
-                     <div className="absolute bottom-1 right-2 text-[8px] text-cyan-500/80 font-mono tracking-widest">
-                        VISION_FEED_01
+                     <div className="absolute bottom-1 right-2 text-[8px] text-amber-400/90 font-mono tracking-widest">
+                        手势识别中
                     </div>
                 </>
             )}
         </div>
 
         {/* Toggle Button */}
-        <button 
+        <button
             onClick={() => setIsExpanded(!isExpanded)}
             className={`
                 flex items-center gap-2 px-3 py-2 rounded-full border backdrop-blur-md transition-all duration-300
-                ${isExpanded 
-                    ? 'bg-cyan-900/40 border-cyan-500 text-cyan-400' 
-                    : 'bg-black/60 border-gray-700 text-gray-400 hover:text-cyan-400 hover:border-cyan-500/50'}
+                ${isExpanded
+                    ? 'bg-amber-900/40 border-amber-400 text-amber-300'
+                    : 'bg-black/60 border-amber-400/30 text-amber-200/80 hover:text-amber-300 hover:border-amber-400/70'}
             `}
         >
-            <div className={`w-2 h-2 rounded-full ${cameraError ? 'bg-red-500' : 'bg-green-500 animate-pulse'}`}></div>
+            <div className={`w-2 h-2 rounded-full ${status === 'error' ? 'bg-red-500' : status === 'loading' ? 'bg-amber-400 animate-pulse' : 'bg-green-500 animate-pulse'}`}></div>
             <Camera size={14} />
             <span className="text-[10px] font-mono tracking-wider font-bold">
-                {isExpanded ? 'HIDE FEED' : 'VISION SYSTEM'}
+                {status === 'loading' ? '手势引擎加载中…' : status === 'error' ? '手势引擎加载失败' : (isExpanded ? '收起画面' : '手势画面')}
             </span>
             {isExpanded ? <ChevronDown size={12} /> : <ChevronUp size={12} />}
         </button>
