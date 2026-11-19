@@ -41,8 +41,19 @@ const loadScript = (src: string): Promise<void> => {
 const HandController: React.FC<Props> = ({ onHandUpdate, showCamera }) => {
   const webcamRef = useRef<Webcam>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const initRef = useRef<() => void>(() => {});
   const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading');
+  const [errorKind, setErrorKind] = useState<'scripts' | 'camera' | null>(null);
   const [isExpanded, setIsExpanded] = useState(false);
+  // 摄像头失败后重试时重挂 <Webcam>，触发 react-webcam 重新申请摄像头
+  const [camKey, setCamKey] = useState(0);
+
+  const retry = () => {
+    setErrorKind(null);
+    setStatus('loading');
+    setCamKey(k => k + 1);
+    initRef.current();
+  };
 
   // Use a ref for hysteresis state to persist across animation frames without re-triggering effects
   const isPinchingRef = useRef(false);
@@ -195,26 +206,38 @@ const HandController: React.FC<Props> = ({ onHandUpdate, showCamera }) => {
           throw new Error('MediaPipe globals missing');
         }
 
-        hands = new (window as any).Hands({ locateFile: (file: string) => 'mediapipe/hands/' + file });
+        if (!hands) {
+          hands = new (window as any).Hands({ locateFile: (file: string) => 'mediapipe/hands/' + file });
 
-        hands.setOptions({
-          maxNumHands: 1,
-          modelComplexity: 1,
-          minDetectionConfidence: 0.5,
-          minTrackingConfidence: 0.5
-        });
+          hands.setOptions({
+            maxNumHands: 1,
+            modelComplexity: 1,
+            minDetectionConfidence: 0.5,
+            minTrackingConfidence: 0.5
+          });
 
-        hands.onResults(onResults);
+          hands.onResults(onResults);
+        }
 
-        await startCamera();
+        try {
+          await startCamera();
+        } catch (err) {
+          if (!cancelled) {
+            console.error('Camera failed to start', err);
+            setErrorKind('camera');
+            setStatus('error');
+          }
+        }
       } catch (err) {
         if (!cancelled) {
           console.error('Failed to initialize MediaPipe', err);
+          setErrorKind('scripts');
           setStatus('error');
         }
       }
     };
 
+    initRef.current = loadMediaPipe;
     loadMediaPipe();
 
     return () => {
@@ -237,16 +260,23 @@ const HandController: React.FC<Props> = ({ onHandUpdate, showCamera }) => {
             ${isExpanded ? 'w-48 h-36 opacity-100 mb-0' : 'w-0 h-0 opacity-0 mb-0 pointer-events-none'}
         `}>
             {cameraError ? (
-                 <div className="flex flex-col items-center justify-center w-full h-full text-xs text-amber-300/90 font-mono gap-1">
-                    <span>摄像头不可用</span>
-                    <span className="text-[9px] text-amber-400/50 tracking-widest">{status === 'loading' ? 'LOADING' : 'SIGNAL LOST'}</span>
+                 <div className="flex flex-col items-center justify-center w-full h-full text-xs text-amber-300/90 font-mono gap-1 px-2 text-center">
+                    <span>{errorKind === 'camera' ? '摄像头不可用' : '引擎加载失败'}</span>
+                    <span className="text-[9px] text-amber-400/50 tracking-widest">
+                        {status === 'loading' ? 'LOADING' : errorKind === 'camera' ? '请在地址栏允许摄像头权限' : 'CHECK NETWORK'}
+                    </span>
                 </div>
             ) : (
                 <>
                     <Webcam
+                        key={camKey}
                         ref={webcamRef}
                         audio={false}
                         mirrored={true}
+                        onUserMediaError={() => {
+                          setErrorKind('camera');
+                          setStatus('error');
+                        }}
                         className="absolute top-0 left-0 w-full h-full object-cover opacity-60"
                         width={320}
                         height={240}
@@ -263,6 +293,18 @@ const HandController: React.FC<Props> = ({ onHandUpdate, showCamera }) => {
         </div>
 
         {/* Toggle Button */}
+        {status === 'error' ? (
+        <button
+            onClick={retry}
+            className="flex items-center gap-2 px-3 py-2 rounded-full border backdrop-blur-md transition-all duration-300 bg-red-950/50 border-red-500/60 text-red-300 hover:text-red-200 hover:border-red-400"
+        >
+            <div className="w-2 h-2 rounded-full bg-red-500"></div>
+            <Activity size={14} />
+            <span className="text-[10px] font-mono tracking-wider font-bold">
+                {errorKind === 'camera' ? '摄像头未授权 · 点我重试' : '引擎加载失败 · 点我重试'}
+            </span>
+        </button>
+        ) : (
         <button
             onClick={() => setIsExpanded(!isExpanded)}
             className={`
@@ -272,13 +314,14 @@ const HandController: React.FC<Props> = ({ onHandUpdate, showCamera }) => {
                     : 'bg-black/60 border-amber-400/30 text-amber-200/80 hover:text-amber-300 hover:border-amber-400/70'}
             `}
         >
-            <div className={`w-2 h-2 rounded-full ${status === 'error' ? 'bg-red-500' : status === 'loading' ? 'bg-amber-400 animate-pulse' : 'bg-green-500 animate-pulse'}`}></div>
+            <div className={`w-2 h-2 rounded-full ${status === 'loading' ? 'bg-amber-400 animate-pulse' : 'bg-green-500 animate-pulse'}`}></div>
             <Camera size={14} />
             <span className="text-[10px] font-mono tracking-wider font-bold">
-                {status === 'loading' ? '手势引擎加载中…' : status === 'error' ? '手势引擎加载失败' : (isExpanded ? '收起画面' : '手势画面')}
+                {status === 'loading' ? '手势引擎加载中…' : (isExpanded ? '收起画面' : '手势画面')}
             </span>
             {isExpanded ? <ChevronDown size={12} /> : <ChevronUp size={12} />}
         </button>
+        )}
     </div>
   );
 };
