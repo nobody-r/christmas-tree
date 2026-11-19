@@ -226,8 +226,6 @@ const HandController: React.FC<Props> = ({ onHandUpdate, showCamera }) => {
 
   if (!showCamera) return null;
 
-  const cameraError = status !== 'ready';
-
   return (
     <div className="fixed bottom-4 right-4 z-50 flex flex-col items-end gap-2">
 
@@ -236,29 +234,29 @@ const HandController: React.FC<Props> = ({ onHandUpdate, showCamera }) => {
             relative overflow-hidden bg-black/90 border border-amber-400/40 rounded-lg transition-all duration-300 origin-bottom-right shadow-[0_0_20px_rgba(255,200,80,0.15)]
             ${isExpanded ? 'w-48 h-36 opacity-100 mb-0' : 'w-0 h-0 opacity-0 mb-0 pointer-events-none'}
         `}>
-            {cameraError ? (
-                 <div className="flex flex-col items-center justify-center w-full h-full text-xs text-amber-300/90 font-mono gap-1">
-                    <span>摄像头不可用</span>
+            {/* 加载中/失败提示层；视频元素始终保持挂载，否则摄像头永远等不到视频流 */}
+            {status !== 'ready' && (
+                 <div className="absolute inset-0 z-10 flex flex-col items-center justify-center text-xs text-amber-300/90 font-mono gap-1">
+                    <span>{status === 'loading' ? '手势引擎加载中' : '摄像头不可用'}</span>
                     <span className="text-[9px] text-amber-400/50 tracking-widest">{status === 'loading' ? 'LOADING' : 'SIGNAL LOST'}</span>
                 </div>
-            ) : (
-                <>
-                    <Webcam
-                        ref={webcamRef}
-                        audio={false}
-                        mirrored={true}
-                        className="absolute top-0 left-0 w-full h-full object-cover opacity-60"
-                        width={320}
-                        height={240}
-                    />
-                    <canvas
-                        ref={canvasRef}
-                        className="absolute top-0 left-0 w-full h-full object-cover"
-                    />
+            )}
+            <Webcam
+                ref={webcamRef}
+                audio={false}
+                mirrored={true}
+                className="absolute top-0 left-0 w-full h-full object-cover opacity-60"
+                width={320}
+                height={240}
+            />
+            <canvas
+                ref={canvasRef}
+                className="absolute top-0 left-0 w-full h-full object-cover"
+            />
+            {status === 'ready' && (
                      <div className="absolute bottom-1 right-2 text-[8px] text-amber-400/90 font-mono tracking-widest">
                         手势识别中
                     </div>
-                </>
             )}
         </div>
 
