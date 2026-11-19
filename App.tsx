@@ -18,6 +18,9 @@ const App: React.FC = () => {
   const [galleryImages, setGalleryImages] = useState<string[]>(GALLERY_IMAGES);
   const [handTrackingEnabled, setHandTrackingEnabled] = useState(false);
   const [showIntro, setShowIntro] = useState(true);
+  // 内置预览等嵌入环境可能以 0×0 视口加载页面且 ResizeObserver 不补发，
+  // 通过轮换 key 强制重挂 3D 场景，让画布在真实尺寸下重新初始化
+  const [experienceKey, setExperienceKey] = useState(0);
 
   // Audio State
   const [audioUrl, setAudioUrl] = useState<string>(DEFAULT_AUDIO);
@@ -48,18 +51,40 @@ const App: React.FC = () => {
     frequencyData: new Uint8Array(0)
   });
 
-  // 兜底：个别嵌入环境的 ResizeObserver 不触发，轮询触发 window resize 促使重测，
-  // 直到画布获得实际尺寸（普通浏览器中 ResizeObserver 正常，此循环会很快退出）
+  // 兜底：个别嵌入环境（如内置预览面板）以 0 尺寸加载页面且 ResizeObserver
+  // 不补发事件。轮询检测窗口与画布尺寸：尺寸异常时先派发 resize，
+  // 仍无效则重挂 3D 场景（最多 5 次），直到画布获得真实视口尺寸。
   useEffect(() => {
     let tries = 0;
+    let badStreak = 0;
+    let remounts = 0;
     const id = setInterval(() => {
       tries++;
+      const vw = window.innerWidth;
+      const vh = window.innerHeight;
       const c = document.querySelector('#root canvas') as HTMLCanvasElement | null;
-      const styleW = c ? parseFloat(getComputedStyle(c).width) : 0;
-      const sized = !!c && styleW > 301;
-      if (!sized) window.dispatchEvent(new Event('resize'));
-      if (sized || tries > 25) clearInterval(id);
-    }, 800);
+      if (!c || vw === 0 || vh === 0) {
+        if (tries > 240) clearInterval(id); // 最长守 4 分钟
+        return;
+      }
+      const styleW = parseFloat(getComputedStyle(c).width) || 0;
+      const styleH = parseFloat(getComputedStyle(c).height) || 0;
+      const sized = styleW > 301 && styleH > vh * 0.5;
+      if (sized) {
+        clearInterval(id);
+        return;
+      }
+      badStreak++;
+      window.dispatchEvent(new Event('resize'));
+      if (badStreak >= 3) {
+        badStreak = 0;
+        if (remounts < 5) {
+          remounts++;
+          setExperienceKey(k => k + 1);
+        }
+      }
+      if (tries > 240) clearInterval(id);
+    }, 1000);
     return () => clearInterval(id);
   }, []);
 
@@ -159,6 +184,7 @@ const App: React.FC = () => {
         </div>
       }>
         <Experience
+            key={experienceKey}
             mode={mode}
             audioData={audioData}
             handData={handData}
