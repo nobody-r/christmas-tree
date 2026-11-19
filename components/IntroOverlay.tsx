@@ -2,6 +2,8 @@ import React, { useEffect, useRef, useState } from 'react';
 
 interface Props {
   onFinished: () => void;
+  /** 有声自动播放被浏览器拦截时为 true：提示用户点击开声 */
+  soundBlocked?: boolean;
 }
 
 /**
@@ -169,7 +171,7 @@ const glints = Array.from({ length: 39 }, () => ({
   frequency: 1.05 + random() * 2.5, size: 2 + random() * 5
 }));
 
-const IntroOverlay: React.FC<Props> = ({ onFinished }) => {
+const IntroOverlay: React.FC<Props> = ({ onFinished, soundBlocked }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const dismissRef = useRef<() => void>(() => {});
   const [fading, setFading] = useState(false);
@@ -699,7 +701,7 @@ const IntroOverlay: React.FC<Props> = ({ onFinished }) => {
           愿今夜的星光，落在你身旁。
         </p>
         <p className={`m-0 mt-3 text-[11px] tracking-[.3em] text-amber-200/70 transition-opacity duration-700 ${hintVisible ? 'opacity-100 shimmer' : 'opacity-0'}`}>
-          点击任意处 · 进入璀璨圣诞树
+          {soundBlocked ? '🔇 浏览器拦截了自动发声 · 点击任意处进入并开启音乐' : '点击任意处 · 进入璀璨圣诞树'}
         </p>
       </header>
 

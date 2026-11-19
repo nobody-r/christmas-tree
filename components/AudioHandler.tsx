@@ -5,9 +5,11 @@ interface Props {
   isPlaying: boolean;
   audioUrl?: string;
   onAudioUpdate: (data: AudioData) => void;
+  /** 有声自动播放被浏览器拦截时回调（用于界面提示用户点击开声） */
+  onAutoplayBlocked?: () => void;
 }
 
-const AudioHandler: React.FC<Props> = ({ isPlaying, audioUrl, onAudioUpdate }) => {
+const AudioHandler: React.FC<Props> = ({ isPlaying, audioUrl, onAudioUpdate, onAutoplayBlocked }) => {
   const audioContextRef = useRef<AudioContext | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
   const sourceRef = useRef<MediaElementAudioSourceNode | null>(null);
@@ -20,6 +22,8 @@ const AudioHandler: React.FC<Props> = ({ isPlaying, audioUrl, onAudioUpdate }) =
          audioRef.current = new Audio();
          audioRef.current.crossOrigin = "anonymous";
          audioRef.current.loop = true;
+         // 调试句柄（自动化验证用）
+         (window as any).__christmasAudio = audioRef.current;
      }
   }, []);
 
@@ -88,6 +92,7 @@ const AudioHandler: React.FC<Props> = ({ isPlaying, audioUrl, onAudioUpdate }) =
                 console.warn("Audio autoplay prevented or failed:", error);
                 // 浏览器禁止有声自动播放 → 降级为静音播放，首次点击后恢复声音
                 if (error && error.name === 'NotAllowedError' && !audioRef.current!.muted) {
+                    onAutoplayBlocked?.();
                     audioRef.current!.muted = true;
                     audioRef.current!.play().catch((e: any) =>
                         console.warn("Muted autoplay also failed:", e));

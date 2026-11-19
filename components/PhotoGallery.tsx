@@ -14,17 +14,23 @@ const PhotoGallery: React.FC<Props> = ({ handData, setHovered, images }) => {
   const { camera } = useThree();
   const groupRef = useRef<THREE.Group>(null);
   
-  // Create fixed random positions for photos
+  // Create fixed random positions for photos, cached by URL so that
+  // adding/removing photos never reshuffles the remaining ones
+  const positionsCache = useRef<Map<string, { initialPos: THREE.Vector3; rotation: THREE.Euler }>>(new Map());
+
   const photoConfig = useMemo(() => {
     return images.map((url, i) => {
+      const cached = positionsCache.current.get(url);
+      if (cached) return { url, ...cached };
       const angle = (i / images.length) * Math.PI * 2;
       const radius = 8;
       // Position them slightly outside the tree radius
-      return {
-        url,
+      const entry = {
         initialPos: new THREE.Vector3(Math.sin(angle) * radius, (Math.random() - 0.5) * 8, Math.cos(angle) * radius),
         rotation: new THREE.Euler(0, angle + Math.PI, 0)
       };
+      positionsCache.current.set(url, entry);
+      return { url, ...entry };
     });
   }, [images]);
 
@@ -142,7 +148,7 @@ const PhotoGallery: React.FC<Props> = ({ handData, setHovered, images }) => {
     <group ref={groupRef}>
       {photoConfig.map((config, i) => (
         <group 
-            key={`${config.url}-${i}`} 
+            key={config.url} 
             name="photo_container" 
             position={config.initialPos} 
             rotation={config.rotation}

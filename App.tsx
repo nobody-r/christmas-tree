@@ -1,4 +1,4 @@
-import React, { useState, Suspense, useEffect } from 'react';
+import React, { useState, Suspense, useEffect, useMemo } from 'react';
 import { AppMode, Gesture, HandData, AudioData, SceneConfig } from './types';
 import Experience from './components/Experience';
 import UIOverlay from './components/UIOverlay';
@@ -40,12 +40,16 @@ const App: React.FC = () => {
   }, []);
 
   // 相册 = 用户持久化照片 + 未被删除的内置示例图
-  const galleryImages = [
+  // 必须 useMemo：本组件随音频数据每帧重渲染，若每次新建数组会导致
+  // PhotoGallery 的 useMemo([images]) 失效、照片位置每帧随机重排（抖动）
+  const galleryImages = useMemo(() => [
     ...userImages.map(u => u.url),
     ...GALLERY_IMAGES.filter(g => !removedDefaults.includes(g))
-  ];
+  ], [userImages, removedDefaults]);
   const [handTrackingEnabled, setHandTrackingEnabled] = useState(false);
   const [showIntro, setShowIntro] = useState(true);
+  // 浏览器拦截有声自动播放（true 时开场界面提示点击开声）
+  const [soundBlocked, setSoundBlocked] = useState(false);
   // 内置预览等嵌入环境可能以 0×0 视口加载页面且 ResizeObserver 不补发，
   // 通过轮换 key 强制重挂 3D 场景，让画布在真实尺寸下重新初始化
   const [experienceKey, setExperienceKey] = useState(0);
@@ -217,6 +221,7 @@ const App: React.FC = () => {
         isPlaying={isPlaying}
         audioUrl={audioUrl}
         onAudioUpdate={setAudioData}
+        onAutoplayBlocked={() => setSoundBlocked(true)}
       />
 
       {handTrackingEnabled && (
@@ -242,7 +247,7 @@ const App: React.FC = () => {
         />
       </Suspense>
 
-      {showIntro && <IntroOverlay onFinished={() => setShowIntro(false)} />}
+      {showIntro && <IntroOverlay onFinished={() => setShowIntro(false)} soundBlocked={soundBlocked} />}
     </div>
   );
 };
