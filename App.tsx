@@ -7,7 +7,7 @@ import AudioHandler from './components/AudioHandler';
 import IntroOverlay from './components/IntroOverlay';
 import { PARTICLE_COUNT, COLOR_PALETTE, GALLERY_IMAGES } from './constants';
 
-const DEFAULT_AUDIO = "https://upload.wikimedia.org/wikipedia/commons/e/e8/Kevin_MacLeod_-_Jingle_Bells.ogg";
+const DEFAULT_AUDIO = "audio/christmas-by-ikson.mp3";
 
 /** 轻量模式：?lite=1 时降低粒子与后处理开销，适配低性能设备 */
 const LITE_MODE = typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('lite');
@@ -24,7 +24,7 @@ const App: React.FC = () => {
 
   // Audio State
   const [audioUrl, setAudioUrl] = useState<string>(DEFAULT_AUDIO);
-  const [audioName, setAudioName] = useState<string>("Kevin MacLeod - Jingle Bells");
+  const [audioName, setAudioName] = useState<string>("Christmas by Ikson");
 
   // Scene Configuration State
   const [config, setConfig] = useState<SceneConfig>({
