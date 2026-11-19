@@ -27,7 +27,13 @@ const AudioHandler: React.FC<Props> = ({ isPlaying, audioUrl, onAudioUpdate, onA
      }
   }, []);
 
-  // 首次用户交互（点击/触摸）后：恢复声音并唤醒 AudioContext；若播放尚未开始则尝试启动
+  // 用户当前是否想要播放（解锁逻辑要尊重用户暂停的意愿：
+  // 用户主动暂停后，点击界面不应重新播放）
+  const isPlayingRef = useRef(isPlaying);
+  useEffect(() => { isPlayingRef.current = isPlaying; }, [isPlaying]);
+
+  // 首次用户交互（点击/触摸）后：恢复声音并唤醒 AudioContext；
+  // 仅当用户意图是「播放中」而播放尚未启动时，才尝试启动
   useEffect(() => {
     const unlock = () => {
       const audio = audioRef.current;
@@ -36,6 +42,7 @@ const AudioHandler: React.FC<Props> = ({ isPlaying, audioUrl, onAudioUpdate, onA
         audioContextRef.current.resume().catch(() => {});
       }
       if (audio.paused) {
+        if (!isPlayingRef.current) return; // 用户已暂停，不要强行播放
         audio.muted = false;
         audio.play().catch(() => {
           audio.muted = true;
