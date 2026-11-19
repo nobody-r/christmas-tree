@@ -4,7 +4,6 @@ import Experience from './components/Experience';
 import UIOverlay from './components/UIOverlay';
 import HandController from './components/HandController';
 import AudioHandler from './components/AudioHandler';
-import IntroOverlay from './components/IntroOverlay';
 import { PARTICLE_COUNT, COLOR_PALETTE, GALLERY_IMAGES } from './constants';
 
 const DEFAULT_AUDIO = "audio/christmas-by-ikson.mp3";
@@ -17,7 +16,6 @@ const App: React.FC = () => {
   const [isPlaying, setIsPlaying] = useState(false);
   const [galleryImages, setGalleryImages] = useState<string[]>(GALLERY_IMAGES);
   const [handTrackingEnabled, setHandTrackingEnabled] = useState(false);
-  const [showIntro, setShowIntro] = useState(true);
   // 内置预览等嵌入环境可能以 0×0 视口加载页面且 ResizeObserver 不补发，
   // 通过轮换 key 强制重挂 3D 场景，让画布在真实尺寸下重新初始化
   const [experienceKey, setExperienceKey] = useState(0);
@@ -192,8 +190,6 @@ const App: React.FC = () => {
             images={galleryImages}
         />
       </Suspense>
-
-      {showIntro && <IntroOverlay onFinished={() => setShowIntro(false)} />}
     </div>
   );
 };
