@@ -17,7 +17,6 @@ interface Props {
 }
 
 const MEDIAPIPE_SCRIPTS = [
-  'mediapipe/camera_utils/camera_utils.js',
   'mediapipe/control_utils/control_utils.js',
   'mediapipe/drawing_utils/drawing_utils.js',
   'mediapipe/hands/hands.js',
@@ -48,12 +47,17 @@ const HandController: React.FC<Props> = ({ onHandUpdate, showCamera }) => {
   const isPinchingRef = useRef(false);
 
   useEffect(() => {
-    let camera: any = null;
     let hands: any = null;
+    let pumpId: number | null = null;
     let cancelled = false;
 
+    // 诊断探针：可在控制台读取 window.__gestureDiag 定位识别问题
+    const diag = { frames: 0, results: 0, noHand: 0, sendErrors: 0, lastError: '' };
+    (window as any).__gestureDiag = diag;
+
     const onResults = (results: any) => {
-      // Draw landmarks on canvas for visual feedback
+      diag.results++;
+      if (!results.multiHandLandmarks || results.multiHandLandmarks.length === 0) diag.noHand++;
       if (canvasRef.current && webcamRef.current && webcamRef.current.video) {
         const videoWidth = webcamRef.current.video.videoWidth;
         const videoHeight = webcamRef.current.video.videoHeight;
@@ -154,34 +158,45 @@ const HandController: React.FC<Props> = ({ onHandUpdate, showCamera }) => {
       }
     };
 
-    const startCamera = (retries = 10): Promise<void> => {
+    // 自研帧泵：从 react-webcam 已就绪的视频流按「新帧」驱动识别。
+    // 不用 camera_utils 的 Camera：它会再申请一次摄像头并依赖 requestAnimationFrame，
+    // 桌面端窗口被遮挡时 rAF 会被浏览器节流/暂停，导致视频有画面但识别永远不跑。
+    // setInterval 在可见页面正常触发，且复用现有视频流，不再二次申请摄像头。
+    const startPump = (): Promise<void> => {
       return new Promise((resolve, reject) => {
-        const attempt = (n: number) => {
+        const waitVideo = (n: number) => {
           if (cancelled) return;
-          if (webcamRef.current && webcamRef.current.video && webcamRef.current.video.readyState >= 2) {
-            camera = new (window as any).Camera(webcamRef.current.video, {
-              onFrame: async () => {
-                if (webcamRef.current && webcamRef.current.video && hands) {
-                  try {
-                    await hands.send({ image: webcamRef.current.video });
-                  } catch (e) {
-                    // ignore transient send errors
-                  }
-                }
-              },
-              width: 320,
-              height: 240
-            });
-            camera.start();
+          const video = webcamRef.current && webcamRef.current.video;
+          if (video && video.readyState >= 2) {
+            let lastTime = -1;
+            let sending = false;
+            pumpId = window.setInterval(async () => {
+              if (cancelled) return;
+              const v = webcamRef.current && webcamRef.current.video;
+              if (!v || !hands || v.paused || v.readyState < 2 || sending) return;
+              if (v.currentTime === lastTime) return; // 没有新帧
+              lastTime = v.currentTime;
+              sending = true;
+              diag.frames++;
+              try {
+                await hands.send({ image: v });
+              } catch (e: any) {
+                diag.sendErrors++;
+                diag.lastError = String((e && e.message) || e).slice(0, 200);
+                if (diag.sendErrors === 1) console.error('hands.send() failed:', e);
+              } finally {
+                sending = false;
+              }
+            }, 120);
             if (!cancelled) setStatus('ready');
             resolve();
           } else if (n > 0) {
-            setTimeout(() => attempt(n - 1), 500);
+            setTimeout(() => waitVideo(n - 1), 500);
           } else {
             reject(new Error('Camera video not ready'));
           }
         };
-        attempt(retries);
+        waitVideo(20);
       });
     };
 
@@ -191,7 +206,7 @@ const HandController: React.FC<Props> = ({ onHandUpdate, showCamera }) => {
         await Promise.all(MEDIAPIPE_SCRIPTS.map(loadScript));
         if (cancelled) return;
 
-        if (!(window as any).Hands || !(window as any).Camera) {
+        if (!(window as any).Hands) {
           throw new Error('MediaPipe globals missing');
         }
 
@@ -206,7 +221,7 @@ const HandController: React.FC<Props> = ({ onHandUpdate, showCamera }) => {
 
         hands.onResults(onResults);
 
-        await startCamera();
+        await startPump();
       } catch (err) {
         if (!cancelled) {
           console.error('Failed to initialize MediaPipe', err);
@@ -219,7 +234,7 @@ const HandController: React.FC<Props> = ({ onHandUpdate, showCamera }) => {
 
     return () => {
       cancelled = true;
-      if (camera) camera.stop();
+      if (pumpId !== null) window.clearInterval(pumpId);
       if (hands) hands.close();
     };
   }, [onHandUpdate, showCamera]);
