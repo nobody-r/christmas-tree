@@ -4,6 +4,7 @@ import Experience from './components/Experience';
 import UIOverlay from './components/UIOverlay';
 import HandController from './components/HandController';
 import AudioHandler from './components/AudioHandler';
+import IntroOverlay from './components/IntroOverlay';
 import { PARTICLE_COUNT, COLOR_PALETTE, GALLERY_IMAGES } from './constants';
 
 const DEFAULT_AUDIO = "https://upload.wikimedia.org/wikipedia/commons/e/e8/Kevin_MacLeod_-_Jingle_Bells.ogg";
@@ -16,6 +17,7 @@ const App: React.FC = () => {
   const [isPlaying, setIsPlaying] = useState(false);
   const [galleryImages, setGalleryImages] = useState<string[]>(GALLERY_IMAGES);
   const [handTrackingEnabled, setHandTrackingEnabled] = useState(false);
+  const [showIntro, setShowIntro] = useState(true);
 
   // Audio State
   const [audioUrl, setAudioUrl] = useState<string>(DEFAULT_AUDIO);
@@ -164,6 +166,8 @@ const App: React.FC = () => {
             images={galleryImages}
         />
       </Suspense>
+
+      {showIntro && <IntroOverlay onFinished={() => setShowIntro(false)} />}
     </div>
   );
 };
