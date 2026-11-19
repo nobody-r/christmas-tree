@@ -17,10 +17,10 @@ interface Props {
 }
 
 const MEDIAPIPE_SCRIPTS = [
-  '/mediapipe/camera_utils/camera_utils.js',
-  '/mediapipe/control_utils/control_utils.js',
-  '/mediapipe/drawing_utils/drawing_utils.js',
-  '/mediapipe/hands/hands.js',
+  'mediapipe/camera_utils/camera_utils.js',
+  'mediapipe/control_utils/control_utils.js',
+  'mediapipe/drawing_utils/drawing_utils.js',
+  'mediapipe/hands/hands.js',
 ];
 
 const loadScript = (src: string): Promise<void> => {
@@ -195,7 +195,7 @@ const HandController: React.FC<Props> = ({ onHandUpdate, showCamera }) => {
           throw new Error('MediaPipe globals missing');
         }
 
-        hands = new (window as any).Hands({ locateFile: (file: string) => '/mediapipe/hands/' + file });
+        hands = new (window as any).Hands({ locateFile: (file: string) => 'mediapipe/hands/' + file });
 
         hands.setOptions({
           maxNumHands: 1,
