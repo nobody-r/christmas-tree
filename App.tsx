@@ -6,8 +6,10 @@ import HandController from './components/HandController';
 import AudioHandler from './components/AudioHandler';
 import IntroOverlay from './components/IntroOverlay';
 import { PARTICLE_COUNT, COLOR_PALETTE, GALLERY_IMAGES } from './constants';
+import { saveImage, deleteImage, loadImages } from './lib/imageStore';
 
 const DEFAULT_AUDIO = "audio/christmas-by-ikson.mp3";
+const REMOVED_DEFAULTS_KEY = 'ct_removed_defaults';
 
 /** 轻量模式：?lite=1 时降低粒子与后处理开销，适配低性能设备 */
 const LITE_MODE = typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('lite');
@@ -17,7 +19,31 @@ const App: React.FC = () => {
   // 开场自动播放默认音乐（有声自动播放被浏览器禁止时，自动降级为静音播放，
   // 首次点击页面后恢复声音）
   const [isPlaying, setIsPlaying] = useState(true);
-  const [galleryImages, setGalleryImages] = useState<string[]>(GALLERY_IMAGES);
+  // 用户上传的照片（持久化到 IndexedDB，刷新后仍在）
+  const [userImages, setUserImages] = useState<{ id: string; url: string }[]>([]);
+  // 被删除的内置示例图
+  const [removedDefaults, setRemovedDefaults] = useState<string[]>(() => {
+    try { return JSON.parse(localStorage.getItem(REMOVED_DEFAULTS_KEY) || '[]'); }
+    catch { return []; }
+  });
+
+  // 启动时从本地数据库恢复用户照片
+  useEffect(() => {
+    let alive = true;
+    loadImages()
+      .then(imgs => {
+        if (!alive || imgs.length === 0) return;
+        setUserImages(imgs.map(i => ({ id: i.id, url: URL.createObjectURL(i.blob) })));
+      })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, []);
+
+  // 相册 = 用户持久化照片 + 未被删除的内置示例图
+  const galleryImages = [
+    ...userImages.map(u => u.url),
+    ...GALLERY_IMAGES.filter(g => !removedDefaults.includes(g))
+  ];
   const [handTrackingEnabled, setHandTrackingEnabled] = useState(false);
   const [showIntro, setShowIntro] = useState(true);
   // 内置预览等嵌入环境可能以 0×0 视口加载页面且 ResizeObserver 不补发，
@@ -111,15 +137,36 @@ const App: React.FC = () => {
     setHandData(prev => ({ ...prev, isPresent: false, gesture: Gesture.IDLE }));
   }
 
-  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
-        const newImages = Array.from(e.target.files).map(file => URL.createObjectURL(file));
-        setGalleryImages(prev => [...prev, ...newImages]);
+      const files = Array.from(e.target.files).filter(f => f.type.startsWith('image/'));
+      const newItems = await Promise.all(files.map(async (f) => {
+        const id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+        // 持久化保存（失败不阻塞展示）
+        await saveImage({ id, name: f.name, blob: f }).catch(() => {});
+        return { id, url: URL.createObjectURL(f) };
+      }));
+      setUserImages(prev => [...prev, ...newItems]);
     }
+    // 允许连续选择同一文件
+    e.target.value = '';
   };
 
-  const handleRemoveImage = (indexToRemove: number) => {
-    setGalleryImages(prev => prev.filter((_, index) => index !== indexToRemove));
+  const handleRemoveImage = (url: string) => {
+    const item = userImages.find(u => u.url === url);
+    if (item) {
+      // 用户上传的照片：从本地数据库删除并释放内存
+      deleteImage(item.id).catch(() => {});
+      URL.revokeObjectURL(item.url);
+      setUserImages(prev => prev.filter(u => u.url !== url));
+    } else {
+      // 内置示例图：记录删除状态，不再显示
+      setRemovedDefaults(prev => {
+        const next = [...prev, url];
+        try { localStorage.setItem(REMOVED_DEFAULTS_KEY, JSON.stringify(next)); } catch {}
+        return next;
+      });
+    }
   };
 
   const handleAudioUpload = (e: React.ChangeEvent<HTMLInputElement>) => {

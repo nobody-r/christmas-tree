@@ -13,7 +13,7 @@ interface Props {
   setConfig: React.Dispatch<React.SetStateAction<SceneConfig>>;
   onImageUpload: (e: React.ChangeEvent<HTMLInputElement>) => void;
   galleryImages: string[];
-  onRemoveImage: (index: number) => void;
+  onRemoveImage: (url: string) => void;
   audioName?: string;
   onAudioUpload?: (e: React.ChangeEvent<HTMLInputElement>) => void;
   handTrackingEnabled: boolean;
@@ -140,10 +140,10 @@ const UIOverlay: React.FC<Props> = ({
                             </button>
 
                             {galleryImages.map((img, idx) => (
-                                <div key={idx} className="relative group aspect-square rounded-lg overflow-hidden border" style={{ borderColor: 'rgba(255,255,255,0.1)' }}>
+                                <div key={img + idx} className="relative group aspect-square rounded-lg overflow-hidden border" style={{ borderColor: 'rgba(255,255,255,0.1)' }}>
                                     <img src={img} alt={`img-${idx}`} className="w-full h-full object-cover opacity-80 group-hover:opacity-100 transition-opacity" />
                                     <button
-                                        onClick={() => onRemoveImage(idx)}
+                                        onClick={() => onRemoveImage(img)}
                                         className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
                                         style={{ background: 'rgba(0,0,0,0.55)', color: '#ff8080' }}
                                     >
@@ -153,7 +153,7 @@ const UIOverlay: React.FC<Props> = ({
                             ))}
                         </div>
                         <div className="text-[10px] text-center" style={{ color: 'rgba(255,255,255,0.35)' }}>
-                            支持 JPG / PNG / WEBP，照片会环绕圣诞树展示
+                            支持 JPG / PNG / WEBP，照片保存在本机浏览器，悬停可删除
                         </div>
                     </div>
                 )}
