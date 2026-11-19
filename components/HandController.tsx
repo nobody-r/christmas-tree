@@ -47,9 +47,35 @@ const HandController: React.FC<Props> = ({ onHandUpdate, showCamera }) => {
   const [isExpanded, setIsExpanded] = useState(false);
   // 摄像头失败后重试时重挂 <Webcam>，触发 react-webcam 重新申请摄像头
   const [camKey, setCamKey] = useState(0);
+  const [errorDetail, setErrorDetail] = useState('');
+
+  // 把摄像头错误翻译成具体原因和操作指引
+  const describeMediaError = (e: any): string => {
+    if (typeof navigator === 'undefined' || !navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      return '当前浏览器不支持摄像头，请使用 Edge 或 Chrome';
+    }
+    const name = e && e.name ? e.name : '';
+    switch (name) {
+      case 'NotAllowedError':
+      case 'PermissionDeniedError':
+      case 'SecurityError':
+        return '摄像头权限被浏览器拦截：点地址栏左侧 🔒 图标 → 网站设置 → 摄像头设为「允许」，然后点下方「重试」';
+      case 'NotFoundError':
+      case 'DevicesNotFoundError':
+        return '未检测到摄像头设备，请检查摄像头连接或开关';
+      case 'NotReadableError':
+      case 'TrackStartError':
+        return '摄像头被其他软件占用，请关闭微信视频 / QQ / 腾讯会议等后重试';
+      case 'OverconstrainedError':
+        return '摄像头不满足分辨率要求，请更换设备试试';
+      default:
+        return '摄像头启动失败：' + ((e && e.message) || name || '未知原因');
+    }
+  };
 
   const retry = () => {
     setErrorKind(null);
+    setErrorDetail('');
     setStatus('loading');
     setCamKey(k => k + 1);
     initRef.current();
@@ -225,6 +251,7 @@ const HandController: React.FC<Props> = ({ onHandUpdate, showCamera }) => {
           if (!cancelled) {
             console.error('Camera failed to start', err);
             setErrorKind('camera');
+            setErrorDetail(prev => prev || describeMediaError(null));
             setStatus('error');
           }
         }
@@ -273,8 +300,9 @@ const HandController: React.FC<Props> = ({ onHandUpdate, showCamera }) => {
                         ref={webcamRef}
                         audio={false}
                         mirrored={true}
-                        onUserMediaError={() => {
+                        onUserMediaError={(e) => {
                           setErrorKind('camera');
+                          setErrorDetail(describeMediaError(e));
                           setStatus('error');
                         }}
                         className="absolute top-0 left-0 w-full h-full object-cover opacity-60"
@@ -293,6 +321,13 @@ const HandController: React.FC<Props> = ({ onHandUpdate, showCamera }) => {
         </div>
 
         {/* Toggle Button */}
+        {status === 'error' && (
+        <div className="max-w-64 px-3 py-2 rounded-lg border border-red-500/40 bg-red-950/60 backdrop-blur-md text-[10px] leading-relaxed text-red-200/90">
+            {errorKind === 'camera'
+              ? (errorDetail || '摄像头不可用，请检查权限后点下方重试')
+              : '手势引擎脚本加载失败，请检查网络后重试'}
+        </div>
+        )}
         {status === 'error' ? (
         <button
             onClick={retry}
