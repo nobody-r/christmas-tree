@@ -23,15 +23,22 @@ const AudioHandler: React.FC<Props> = ({ isPlaying, audioUrl, onAudioUpdate }) =
      }
   }, []);
 
-  // 首次用户交互（点击/触摸）后：恢复声音并唤醒 AudioContext
+  // 首次用户交互（点击/触摸）后：恢复声音并唤醒 AudioContext；若播放尚未开始则尝试启动
   useEffect(() => {
     const unlock = () => {
       const audio = audioRef.current;
-      if (audio && !audio.paused && audio.muted) {
-        audio.muted = false;
-      }
+      if (!audio) return;
       if (audioContextRef.current && audioContextRef.current.state === 'suspended') {
         audioContextRef.current.resume().catch(() => {});
+      }
+      if (audio.paused) {
+        audio.muted = false;
+        audio.play().catch(() => {
+          audio.muted = true;
+          audio.play().catch(() => {});
+        });
+      } else if (audio.muted) {
+        audio.muted = false;
       }
     };
     document.addEventListener('pointerdown', unlock);
