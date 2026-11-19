@@ -23,6 +23,21 @@ const AudioHandler: React.FC<Props> = ({ isPlaying, audioUrl, onAudioUpdate }) =
      }
   }, []);
 
+  // 首次用户交互（点击/触摸）后：恢复声音并唤醒 AudioContext
+  useEffect(() => {
+    const unlock = () => {
+      const audio = audioRef.current;
+      if (audio && !audio.paused && audio.muted) {
+        audio.muted = false;
+      }
+      if (audioContextRef.current && audioContextRef.current.state === 'suspended') {
+        audioContextRef.current.resume().catch(() => {});
+      }
+    };
+    document.addEventListener('pointerdown', unlock);
+    return () => document.removeEventListener('pointerdown', unlock);
+  }, []);
+
   // Handle URL updates
   useEffect(() => {
      if (audioRef.current && audioUrl) {
@@ -62,8 +77,14 @@ const AudioHandler: React.FC<Props> = ({ isPlaying, audioUrl, onAudioUpdate }) =
 
         const playPromise = audioRef.current.play();
         if (playPromise !== undefined) {
-            playPromise.catch(error => {
+            playPromise.catch((error: any) => {
                 console.warn("Audio autoplay prevented or failed:", error);
+                // 浏览器禁止有声自动播放 → 降级为静音播放，首次点击后恢复声音
+                if (error && error.name === 'NotAllowedError' && !audioRef.current!.muted) {
+                    audioRef.current!.muted = true;
+                    audioRef.current!.play().catch((e: any) =>
+                        console.warn("Muted autoplay also failed:", e));
+                }
             });
         }
 

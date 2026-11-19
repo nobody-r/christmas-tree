@@ -14,7 +14,9 @@ const LITE_MODE = typeof window !== 'undefined' && new URLSearchParams(window.lo
 
 const App: React.FC = () => {
   const [mode, setMode] = useState<AppMode>(AppMode.TREE);
-  const [isPlaying, setIsPlaying] = useState(false);
+  // 开场自动播放默认音乐（有声自动播放被浏览器禁止时，自动降级为静音播放，
+  // 首次点击页面后恢复声音）
+  const [isPlaying, setIsPlaying] = useState(true);
   const [galleryImages, setGalleryImages] = useState<string[]>(GALLERY_IMAGES);
   const [handTrackingEnabled, setHandTrackingEnabled] = useState(false);
   const [showIntro, setShowIntro] = useState(true);
